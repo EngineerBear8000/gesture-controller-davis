@@ -291,7 +291,7 @@ void loop(void)
     output.channels[YAW] = DEFAULT_CHANNEL_VALUE + angleToRcChannel(opX); // why is it minus?
     output.channels[THROTTLE_T] = joystickToRcChannel(opT);
     output.channels[4] = 2000; //arm
-    output.channels[6] = 2000; //pos hold
+    output.channels[6] = 1500; //alt hold
     // output.channels[6] = three_pos + DEFAULT_CHANNEL_VALUE;  //
     output.channels[5] = DEFAULT_CHANNEL_VALUE + drop; //drop
     
