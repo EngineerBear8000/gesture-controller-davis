@@ -14,9 +14,11 @@
 #define SERIAL1_RX -1
 #define SERIAL1_TX 39
 
-#define PIN_THUMB_JOYSTICK_X 9
-#define PIN_THUMB_JOYSTICK_Y 13
-#define PIN_THUMB_JOYSTICK_SW 12
+#define PIN_THUMB_JOYSTICK_Y 6
+#define PIN_II 13
+#define PIN_I 12
+#define PIN_DROP 11
+
 
 #ifdef TRAINER_MODE_SBUS
 #define SBUS_UPDATE_TASK_MS 15
@@ -84,8 +86,6 @@ void IRAM_ATTR onPpmTimer() {
 }
 #endif
 
-thumb_joystick_t thumbJoystick;
-
 // BleGamepad bleGamepad;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55);
@@ -100,11 +100,11 @@ float offsetX = 0;
 float offsetY = 0;
 float offsetZ = 0;
 
-// LED Outputs
-#define ledCW 8
-#define ledCCW 9
+float throttleRaw = 0.0;
+int lastT[] = {0,0,0,0};
 
-String encdir ="";
+int three_pos = -500;
+int drop = -500;
 
 
 int angleToRcChannel(float angle)
@@ -115,38 +115,38 @@ int angleToRcChannel(float angle)
 }
 int joystickToRcChannel(float angle)
 {
-    const float value = fconstrainf(applyDeadband(angle, 0.02f), -1.0f, 1.0f);
-    return (int)fscalef(value, -1.0f, 1.0f, -200, 200);
+    const float value = fconstrainf(applyDeadband(angle, 0.3f), -1.0f, 1.0f);
+    return (int)fscalef(value, -1.0f, 1.0f, 1000, 2000);
 }
 
-void processJoystickAxis(uint8_t axis, uint8_t pin)
-{
-    thumbJoystick.raw[axis] = analogRead(pin);
-    thumbJoystick.zeroed[axis] = thumbJoystick.calibration.zero[axis] - thumbJoystick.raw[axis];
+// void processJoystickAxis(uint8_t axis, uint8_t pin)
+// {
+//     thumbJoystick.raw[axis] = analogRead(pin);
+//     thumbJoystick.zeroed[axis] = thumbJoystick.calibration.zero[axis] - thumbJoystick.raw[axis];
 
-    if (thumbJoystick.calibration.state == CALIBRATION_DONE)
-    {
+//     if (thumbJoystick.calibration.state == CALIBRATION_DONE)
+//     {
 
-        if (thumbJoystick.zeroed[axis] > thumbJoystick.max[axis])
-        {
-            thumbJoystick.max[axis] = thumbJoystick.zeroed[axis];
-        }
+//         if (thumbJoystick.zeroed[axis] > thumbJoystick.max[axis])
+//         {
+//             thumbJoystick.max[axis] = thumbJoystick.zeroed[axis];
+//         }
 
-        if (thumbJoystick.zeroed[axis] < thumbJoystick.min[axis])
-        {
-            thumbJoystick.min[axis] = thumbJoystick.zeroed[axis];
-        }
+//         if (thumbJoystick.zeroed[axis] < thumbJoystick.min[axis])
+//         {
+//             thumbJoystick.min[axis] = thumbJoystick.zeroed[axis];
+//         }
 
-        if (thumbJoystick.zeroed[axis] > 0)
-        {
-            thumbJoystick.position[axis] = fscalef(thumbJoystick.zeroed[axis], 0, thumbJoystick.max[axis], 0.0f, 1.0f);
-        }
-        else
-        {
-            thumbJoystick.position[axis] = fscalef(thumbJoystick.zeroed[axis], thumbJoystick.min[axis], 0, -1.0f, 0.0f);
-        }
-    }
-}
+//         if (thumbJoystick.zeroed[axis] > 0)
+//         {
+//             thumbJoystick.position[axis] = fscalef(thumbJoystick.zeroed[axis], 0, thumbJoystick.max[axis], 0.0f, 1.0f);
+//         }
+//         else
+//         {
+//             thumbJoystick.position[axis] = fscalef(thumbJoystick.zeroed[axis], thumbJoystick.min[axis], 0, -1.0f, 0.0f);
+//         }
+//     }
+// }
 
 int getRcChannel_wrapper(uint8_t channel)
 {
@@ -198,10 +198,12 @@ void setup(void)
   }
     // Set encoder pins as inputs  
    
-  // Set LED pins as outputs
-  pinMode (ledCW,OUTPUT);
-  pinMode (ledCCW,OUTPUT);
-    
+
+  pinMode(PIN_THUMB_JOYSTICK_Y,INPUT);
+  pinMode(PIN_II,INPUT_PULLUP);
+  pinMode(PIN_I,INPUT_PULLUP);
+  pinMode(PIN_DROP,INPUT_PULLUP);
+
   delay(1000);
     
   bno.setExtCrystalUse(true);
@@ -214,16 +216,46 @@ void loop(void)
 
     /* Get a new sensor event */ 
     sensors_event_t event;
-    bno.getEvent(&event);
+    bno.getEvent(&event); 
     
-    if (!isOffset)
+    if (!isOffset or counter < 1000)
     {
+      counter ++;
       offsetX = event.orientation.x;
       // offsetY = event.orientation.y;
       // offsetZ = event.orientation.z;
       isOffset = true;
     }
-    
+    // throttleRaw = analogRead(PIN_THUMB_JOYSTICK_Y);
+    if(!digitalRead(11)){
+     drop = 500;
+    }
+
+    else{
+      drop = -500;
+    }
+
+    if(!digitalRead(13)){
+      Serial.println("II");
+      three_pos = 500;
+    }
+    else if(!digitalRead(12)){
+      Serial.println("I");
+      three_pos = -500;
+    }
+    else{
+      Serial.println("O");
+      three_pos = 0;
+    }
+
+    for(int i=3 ; i >= 0; i--)
+    {
+      lastT[i] = lastT[i-1];
+    }
+    lastT[0] = analogRead(PIN_THUMB_JOYSTICK_Y);
+
+    throttleRaw = (lastT[0] + lastT[1] +lastT[2]+ lastT[3])/40;
+
     formattedX = adjustFloat(event.orientation.x, offsetX);
     formattedY = event.orientation.y;
     formattedZ = event.orientation.z;
@@ -239,38 +271,47 @@ void loop(void)
     // Serial.print(formattedZ, 4);
     // Serial.println("");
 
-//    float opX = formattedX;
-//    float opY = formattedY;
-//    float opZ = formattedZ;
-
-      float opX = map(formattedX, -180, 180, 90, -90); // yaw
-      float opY = map(formattedY, -180, 180,90);// roll
-      float opZ = map(formattedZ, -180, 180, -90, 90); // pitch
-    
+//    f
+      float opX = formattedX; //+ to - 90
+      float opY = formattedY; //roll 
+      float opZ = formattedZ;  //pitch
+      // float opX = map(formattedX, -180, 180,90,-90);// yaw
+      // float opY = map(formattedY, -180, 180,90,-90);// roll
+      // float opZ = map(formattedZ, -180, 180, -90, 90); // pitch
+      float opT = fscalef(throttleRaw, 130.0f, 409.0f, -1.0, 1.0); // throttle
+      
     //bleGamepad.setAxes(formattedX, formattedY, formattedZ, 0, 0, 0, 0, 0);
     // (x axis, y axis, z axis, rx axis, ry axis, rz axis, slider 1, slider 2)
     
     // bleGamepad.setHat1(HAT_DOWN_RIGHT);
     // All axes, sliders, hats etc can also be set independently. See the IndividualAxes.ino example
 
-    output.channels[ROLL] = DEFAULT_CHANNEL_VALUE + angleToRcChannel(opY);
+    output.channels[ROLL] = DEFAULT_CHANNEL_VALUE - angleToRcChannel(opY);
     output.channels[PITCH] = DEFAULT_CHANNEL_VALUE + angleToRcChannel(opZ);
-    output.channels[YAW] = DEFAULT_CHANNEL_VALUE - angleToRcChannel(opX); // why is it minus?
-    output.channels[THROTTLE_T] = DEFAULT_CHANNEL_VALUE + joystickToRcChannel(thumbJoystick.position[AXIS_Y]);
-    output.channels[4] = DEFAULT_CHANNEL_VALUE + 1000;
-    //Serial.println(counter_scroll);
+    output.channels[YAW] = DEFAULT_CHANNEL_VALUE + angleToRcChannel(opX); // why is it minus?
+    output.channels[THROTTLE_T] = joystickToRcChannel(opT);
+    output.channels[4] = 2000; //arm
+    output.channels[6] = 2000; //pos hold
+    // output.channels[6] = three_pos + DEFAULT_CHANNEL_VALUE;  //
+    output.channels[5] = DEFAULT_CHANNEL_VALUE + drop; //drop
+    
+    // Serial.println();
     /* Display the formatted floating point data */
-//    Serial.print("X: ");
-//    Serial.print(angleToRcChannel(opX));
-//    Serial.print("\tY: ");
-//    Serial.print(angleToRcChannel(opY));
-//    Serial.print("\tZ: ");
-//    Serial.print(angleToRcChannel(opZ));
-//    Serial.print("\toffset: ");
-//    Serial.print(offsetX);
-//    Serial.print("\tizz_offset: ");
-//    Serial.print(isOffset);
-//    Serial.println("");                                                                                                       
+   Serial.print("X: ");
+   Serial.print(angleToRcChannel(opX));
+   Serial.print("\tY: ");
+   Serial.print(angleToRcChannel(opY));
+   Serial.print("\tZ: ");
+   Serial.print(angleToRcChannel(opZ));
+   Serial.print("\tT: ");
+  //  Serial.print(throttleRaw);
+   Serial.println(joystickToRcChannel(opT));
+   
+   Serial.print("\toffset: ");
+   Serial.print(offsetX);
+   Serial.print("\tizz_offset: ");
+   Serial.print(isOffset);
+   Serial.println("");                                                                                                       
 
 
     for (uint8_t i = 0; i < SBUS_CHANNEL_COUNT; i++) {
